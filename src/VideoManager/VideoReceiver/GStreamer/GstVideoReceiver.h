@@ -43,6 +43,7 @@ public slots:
     void stop() override;
     void startDecoding(void *sink) override;
     void stopDecoding() override;
+    void setAudioActive(bool active) override;
     void startRecording(const QString &videoFile, FILE_FORMAT format) override;
     void stopRecording() override;
 
@@ -91,6 +92,12 @@ private:
     }
 
     QString _redactedUri() const;
+    GstElement* _makeAudioSink(GstElement** audioMuteOut = nullptr);
+    bool _ensureAudioBranch();
+    bool _wantsAudioPlayback() const;
+    GstElement* _audioSink = nullptr;
+    GstElement* _audioDecoder = nullptr;
+    GstElement* _audioMute = nullptr;
 
     void _startPipeline(const StartConfig& config);
     void _onNewSourcePad(GstPad *pad);

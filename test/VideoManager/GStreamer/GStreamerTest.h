@@ -140,9 +140,9 @@ private slots:
     void _testSourceFactoryNoRetransmission();
     void _testSourceFactoryRtspJitterBufferPolicy_data();
     void _testSourceFactoryRtspJitterBufferPolicy();
-    void _testSourceFactoryRtspSelectsOnlyVideoStreams_data();
-    void _testSourceFactoryRtspSelectsOnlyVideoStreams();
-    void _testSourceFactoryRtspSetsUpOnlyVideoStream();
+    void _testSourceFactoryRtspSelectsAudioAndVideoStreams_data();
+    void _testSourceFactoryRtspSelectsAudioAndVideoStreams();
+    void _testSourceFactoryRtspSetsUpAudioStream();
     void _testSourceFactoryRejectsBadUri();
     void _testSourceFactoryTcpMpegTs();
     void _testSourceFactoryRejectsBadTcpUri();

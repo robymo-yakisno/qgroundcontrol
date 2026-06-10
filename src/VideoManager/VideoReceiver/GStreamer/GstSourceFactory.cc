@@ -1,7 +1,7 @@
 #include "GstSourceFactory.h"
 
-#include <gst/gstchildproxy.h>
 #include <gst/gst.h>
+#include <gst/gstchildproxy.h>
 #include <gst/gstutils.h>
 #include <gst/rtsp/gstrtsptransport.h>
 #include <utility>
@@ -24,6 +24,8 @@ using namespace GStreamer;
 constexpr guint64 kRtspTcpTimeoutUs = G_GUINT64_CONSTANT(5000000);
 constexpr int kRtspRetry = 3;
 constexpr int kUdpBufferSizeBytes = 8 * 1024 * 1024;
+constexpr const char* kSourceVideoParserName = "source-video-parser";
+constexpr const char* kSourceAudioParserName = "source-audio-parser";
 
 const char* elementFactoryName(GstElement* element)
 {
@@ -231,9 +233,38 @@ gboolean filterParserCaps([[maybe_unused]] GstElement* bin, [[maybe_unused]] Gst
 }
 #endif
 
+gchar* ghostPadNameForElementPad(GstElement* element, GstPad* pad)
+{
+    if (!pad) {
+        return nullptr;
+    }
+
+    gchar* padName = gst_pad_get_name(pad);
+    if (!padName) {
+        return nullptr;
+    }
+
+    if (!element) {
+        return padName;
+    }
+
+    const gchar* elementName = gst_element_get_name(element);
+    if (g_strcmp0(elementName, kSourceVideoParserName) == 0) {
+        g_free(padName);
+        return g_strdup("src_0");
+    }
+
+    if (g_strcmp0(elementName, kSourceAudioParserName) == 0) {
+        g_free(padName);
+        return g_strdup("src_1");
+    }
+
+    return padName;
+}
+
 void wrapWithGhostPad(GstElement* element, GstPad* pad, [[maybe_unused]] gpointer data)
 {
-    const GCharPtr name = adoptGChar(gst_pad_get_name(pad));
+    const GCharPtr name = adoptGChar(ghostPadNameForElementPad(element, pad));
     if (!name) {
         qCWarning(GstSourceFactoryLog) << "gst_pad_get_name() failed";
         return;
@@ -289,6 +320,110 @@ bool addStaticGhostPad(GstElement* element)
 bool validPort(int port)
 {
     return port > 0 && port <= 65535;
+}
+
+enum class SourcePadType
+{
+    Unknown,
+    Video,
+    Audio,
+};
+
+SourcePadType classifySourcePad(GstPad* pad)
+{
+    if (!pad) {
+        return SourcePadType::Unknown;
+    }
+
+    GstCaps* caps = gst_pad_query_caps(pad, nullptr);
+    if (caps && (gst_caps_get_size(caps) > 0)) {
+        const GstStructure* structure = gst_caps_get_structure(caps, 0);
+        if (structure) {
+            const gchar* mediaType = gst_structure_get_name(structure);
+            if (mediaType) {
+                if (g_str_has_prefix(mediaType, "video/")) {
+                    gst_clear_caps(&caps);
+                    return SourcePadType::Video;
+                }
+                if (g_str_has_prefix(mediaType, "audio/")) {
+                    gst_clear_caps(&caps);
+                    return SourcePadType::Audio;
+                }
+            }
+
+            const gchar* media = gst_structure_get_string(structure, "media");
+            if (media) {
+                if (g_strcmp0(media, "video") == 0) {
+                    gst_clear_caps(&caps);
+                    return SourcePadType::Video;
+                }
+                if (g_strcmp0(media, "audio") == 0) {
+                    gst_clear_caps(&caps);
+                    return SourcePadType::Audio;
+                }
+            }
+        }
+    }
+    gst_clear_caps(&caps);
+
+    gchar* name = gst_pad_get_name(pad);
+    if (!name) {
+        qCCritical(GstSourceFactoryLog) << "gst_pad_get_name() failed";
+        return SourcePadType::Unknown;
+    }
+
+    const bool isVideo = g_str_has_prefix(name, "video_");
+    const bool isAudio = g_str_has_prefix(name, "audio_");
+    g_clear_pointer(&name, g_free);
+    return isVideo ? SourcePadType::Video : (isAudio ? SourcePadType::Audio : SourcePadType::Unknown);
+}
+
+void routeRtspWhepPad(GstElement* element, GstPad* pad, gpointer /*data*/)
+{
+    GstObject* parent = gst_element_get_parent(GST_OBJECT(element));
+    if (!parent || !GST_IS_BIN(parent)) {
+        qCCritical(GstSourceFactoryLog) << "Unable to find RTSP/WHEP source bin parent for dynamic pad";
+        gst_clear_object(&parent);
+        return;
+    }
+
+    const SourcePadType padType = classifySourcePad(pad);
+    const char* targetName = nullptr;
+    const char* context = nullptr;
+    switch (padType) {
+        case SourcePadType::Video:
+            targetName = kSourceVideoParserName;
+            context = "Source video pad";
+            break;
+        case SourcePadType::Audio:
+            targetName = kSourceAudioParserName;
+            context = "Source audio pad";
+            break;
+        case SourcePadType::Unknown:
+            gst_clear_object(&parent);
+            return;
+    }
+
+    GstElement* target = gst_bin_get_by_name(GST_BIN(parent), targetName);
+    gst_clear_object(&parent);
+    if (!target) {
+        qCDebug(GstSourceFactoryLog) << context << "ignored because parser branch is unavailable";
+        return;
+    }
+
+    gchar* padName = gst_pad_get_name(pad);
+    if (!padName) {
+        qCCritical(GstSourceFactoryLog) << "gst_pad_get_name() failed";
+        gst_clear_object(&target);
+        return;
+    }
+
+    if (!gst_element_link_pads(element, padName, target, "sink")) {
+        qCWarning(GstSourceFactoryLog) << "gst_element_link_pads() failed for" << context;
+    }
+
+    g_clear_pointer(&padName, g_free);
+    gst_clear_object(&target);
 }
 
 // SDP-derived caps carry the stream's media type; audio and metadata streams must never reach the video parser.
@@ -348,14 +483,17 @@ void connectRtspJitterBufferPolicy([[maybe_unused]] GstElement* rtspsrc, GstElem
 // Runs before SETUP, so skipped SDP streams cost no bandwidth and can't claim the video parser. The caps are
 // still named application/x-unknown here (rtspsrc renames them to the transport's media type only after
 // SETUP), so only the SDP media type decides.
-gboolean selectVideoStream([[maybe_unused]] GstElement* rtspsrc, guint num, GstCaps* caps,
+gboolean selectMediaStream([[maybe_unused]] GstElement* rtspsrc, guint num, GstCaps* caps,
                            [[maybe_unused]] gpointer data)
 {
-    if (caps && (gst_caps_get_size(caps) > 0) && isVideoMedia(gst_caps_get_structure(caps, 0))) {
-        return TRUE;
+    if (caps && (gst_caps_get_size(caps) > 0)) {
+        const GstStructure* structure = gst_caps_get_structure(caps, 0);
+        if (isVideoMedia(structure) || g_strcmp0(gst_structure_get_string(structure, "media"), "audio") == 0) {
+            return TRUE;
+        }
     }
 
-    qCDebug(GstSourceFactoryLog) << "Skipping non-video RTSP stream" << num;
+    qCDebug(GstSourceFactoryLog) << "Skipping non-media RTSP stream" << num;
     return FALSE;
 }
 
@@ -484,7 +622,7 @@ GstElementPtr buildRtspSource(const QString& uri, const QUrl& sourceUrl, const C
     if (doRetransmission) {
         (void) g_signal_connect(source.get(), "new-manager", G_CALLBACK(connectRtspJitterBufferPolicy), nullptr);
     }
-    (void) g_signal_connect(source.get(), "select-stream", G_CALLBACK(selectVideoStream), nullptr);
+    (void) g_signal_connect(source.get(), "select-stream", G_CALLBACK(selectMediaStream), nullptr);
 
     const QString rtspUser = sourceUrl.userName(QUrl::FullyDecoded);
     const QString rtspPassword = sourceUrl.password(QUrl::FullyDecoded);
@@ -512,7 +650,6 @@ GstElementPtr buildWhepSource(const QString& uri, const QUrl& sourceUrl, const C
 
     gst_child_proxy_set(GST_CHILD_PROXY(source.get()), "signaller::whep-endpoint", whepEndpoint.constData(), nullptr);
     g_object_set(source.get(), "do-retransmission", config.doRetransmission ? TRUE : FALSE, nullptr);
-    gst_util_set_object_arg(G_OBJECT(source.get()), "audio-codecs", "< >");
 
     // QGC supports every codec in whepclientsrc's default list. This
     // restriction is precautionary as there was a concern that advertising the
@@ -637,8 +774,8 @@ bool linkSourceToParser(GstElement* bin, GstElement* upstream, GstElement* binPa
     } else {
         // linkPad applies the jitter-buffer policy itself when an application/x-rtp pad appears on a
         // non-RTSP source. Context lifetime is tied to binParser (freed on its finalize).
-        auto* ctx =
-            new DynamicLinkContext{binParser, latencyMs, allowDynamicJitterBuffer && (config.jitterBuffer != JitterBuffer::None)};
+        auto* ctx = new DynamicLinkContext{binParser, latencyMs,
+                                           allowDynamicJitterBuffer && (config.jitterBuffer != JitterBuffer::None)};
         g_object_set_data_full(G_OBJECT(binParser), "qgc-dynamic-link-ctx", ctx,
                                [](gpointer p) { delete static_cast<DynamicLinkContext*>(p); });
         (void) g_signal_connect(upstream, "pad-added", G_CALLBACK(linkPad), ctx);
@@ -728,7 +865,8 @@ GstElement* create(const QString& uri, const Config& config)
     }
 
     const char* const parserFactory = isUdpH265 ? "h265parse" : "parsebin";
-    GstElementPtr parser = adoptElement(gst_element_factory_make(parserFactory, "parser"));
+    GstElementPtr parser =
+        adoptElement(gst_element_factory_make(parserFactory, (isRtsp || isWhep) ? kSourceVideoParserName : "parser"));
     if (!parser) {
         qCWarning(GstSourceFactoryLog) << "gst_element_factory_make(" << parserFactory << ") failed";
         return nullptr;
@@ -777,6 +915,22 @@ GstElement* create(const QString& uri, const Config& config)
     GstElement* const binParser = addToBin(bin.get(), std::move(parser), "parser");
     if (!binParser) {
         return nullptr;
+    }
+
+    if (isRtsp || isWhep) {
+        GstElementPtr audioParser = adoptElement(gst_element_factory_make("parsebin", kSourceAudioParserName));
+        if (!audioParser) {
+            qCWarning(GstSourceFactoryLog) << "gst_element_factory_make('parsebin') failed for source audio";
+            return nullptr;
+        }
+        GstElement* binAudioParser = addToBin(bin.get(), std::move(audioParser), "audioParser");
+        if (!binAudioParser) {
+            return nullptr;
+        }
+        (void) g_signal_connect(upstream, "pad-added", G_CALLBACK(routeRtspWhepPad), nullptr);
+        (void) g_signal_connect(binParser, "pad-added", G_CALLBACK(wrapWithGhostPad), nullptr);
+        (void) g_signal_connect(binAudioParser, "pad-added", G_CALLBACK(wrapWithGhostPad), nullptr);
+        return bin.release();
     }
 
     // Android can't determine MPEG2-TS via parsebin, so create tsdemux explicitly.

@@ -377,7 +377,7 @@ void GStreamerTest::_testSourceFactoryRtspJitterBufferPolicy()
     QCOMPARE(rtxMaxRetries, expectedRtxMaxRetries);
 }
 
-void GStreamerTest::_testSourceFactoryRtspSelectsOnlyVideoStreams_data()
+void GStreamerTest::_testSourceFactoryRtspSelectsAudioAndVideoStreams_data()
 {
     QTest::addColumn<QString>("capsName");
     QTest::addColumn<QString>("media");
@@ -386,13 +386,14 @@ void GStreamerTest::_testSourceFactoryRtspSelectsOnlyVideoStreams_data()
     // Before the first SETUP rtspsrc passes SDP-derived caps that are still named application/x-unknown.
     const QString sdpCaps = QStringLiteral("application/x-unknown");
     QTest::newRow("video") << sdpCaps << QStringLiteral("video") << true;
-    QTest::newRow("audio") << sdpCaps << QStringLiteral("audio") << false;
+    QTest::newRow("audio") << sdpCaps << QStringLiteral("audio") << true;
     QTest::newRow("metadata") << sdpCaps << QStringLiteral("application") << false;
     // On reconnect the stream caps already carry the transport media type.
     QTest::newRow("reconnect-video") << QStringLiteral("application/x-rtp") << QStringLiteral("video") << true;
+    QTest::newRow("reconnect-audio") << QStringLiteral("application/x-rtp") << QStringLiteral("audio") << true;
 }
 
-void GStreamerTest::_testSourceFactoryRtspSelectsOnlyVideoStreams()
+void GStreamerTest::_testSourceFactoryRtspSelectsAudioAndVideoStreams()
 {
     if (!GstTest::firstMissingFactory({"rtspsrc"}).isEmpty()) {
         QSKIP("rtspsrc plugin unavailable");
@@ -421,7 +422,7 @@ void GStreamerTest::_testSourceFactoryRtspSelectsOnlyVideoStreams()
     QCOMPARE(selected, expectedSelected ? TRUE : FALSE);
 }
 
-void GStreamerTest::_testSourceFactoryRtspSetsUpOnlyVideoStream()
+void GStreamerTest::_testSourceFactoryRtspSetsUpAudioStream()
 {
     if (!GstTest::firstMissingFactory({"rtspsrc"}).isEmpty()) {
         QSKIP("rtspsrc plugin unavailable");
@@ -454,8 +455,8 @@ void GStreamerTest::_testSourceFactoryRtspSetsUpOnlyVideoStream()
     QVERIFY(gst_element_set_state(pipeline.get(), GST_STATE_PAUSED) != GST_STATE_CHANGE_FAILURE);
 
     QVERIFY_TRUE_WAIT(!server.setupUrls().isEmpty(), TestTimeout::mediumMs());
-    QVERIFY2(server.setupUrls().first().endsWith("/trackID=1"),
-             qPrintable(QStringLiteral("first SETUP must target the video track, got %1")
+    QVERIFY2(server.setupUrls().first().endsWith("/trackID=0"),
+             qPrintable(QStringLiteral("first SETUP must target the audio track, got %1")
                             .arg(QString::fromUtf8(server.setupUrls().first()))));
 }
 

@@ -36,6 +36,76 @@ GstPadProbeReturn holdPad(GstPad* /*pad*/, GstPadProbeInfo* /*info*/, gpointer /
     return GST_PAD_PROBE_OK;
 }
 
+bool linkDynamicPadToElementSink(GstPad* srcPad, GstElement* target, const char* context)
+{
+    if (!srcPad || !target) {
+        qCCritical(GstVideoReceiverLog) << "Invalid parameters while linking dynamic pad";
+        return false;
+    }
+
+    GstPad* sinkPad = gst_element_get_static_pad(target, "sink");
+    if (!sinkPad) {
+        qCCritical(GstVideoReceiverLog) << "gst_element_get_static_pad('sink') failed for" << context;
+        return false;
+    }
+
+    if (gst_pad_is_linked(sinkPad)) {
+        qCDebug(GstVideoReceiverLog) << context << "sink already linked, ignoring extra pad";
+        gst_clear_object(&sinkPad);
+        return false;
+    }
+
+    const GstPadLinkReturn linkRet = gst_pad_link(srcPad, sinkPad);
+    gst_clear_object(&sinkPad);
+    if (linkRet != GST_PAD_LINK_OK) {
+        qCCritical(GstVideoReceiverLog) << context << "link failed with result:" << linkRet;
+        return false;
+    }
+
+    return true;
+}
+
+bool isAudioSourcePad(GstPad* pad)
+{
+    if (!pad) {
+        return false;
+    }
+
+    GstCaps* caps = gst_pad_query_caps(pad, nullptr);
+    if (caps) {
+        const guint nCaps = gst_caps_get_size(caps);
+        for (guint i = 0; i < nCaps; ++i) {
+            const GstStructure* structure = gst_caps_get_structure(caps, i);
+            if (!structure) {
+                continue;
+            }
+
+            const gchar* mediaType = gst_structure_get_name(structure);
+            if (mediaType && g_str_has_prefix(mediaType, "audio/")) {
+                gst_clear_caps(&caps);
+                return true;
+            }
+
+            const gchar* media = gst_structure_get_string(structure, "media");
+            if (media && (g_strcmp0(media, "audio") == 0)) {
+                gst_clear_caps(&caps);
+                return true;
+            }
+        }
+        gst_clear_caps(&caps);
+    }
+
+    gchar* name = gst_pad_get_name(pad);
+    if (!name) {
+        qCCritical(GstVideoReceiverLog) << "gst_pad_get_name() failed";
+        return false;
+    }
+
+    const bool isAudio = g_str_has_prefix(name, "audio_");
+    g_clear_pointer(&name, g_free);
+    return isAudio;
+}
+
 void logBusWarning(GstMessage* message)
 {
     // GStreamer posts WARNING for caps mismatches, decoder fallbacks, clock drift — surfacing keeps these
@@ -49,10 +119,17 @@ void logBusWarning(GstMessage* message)
                                    << "debug:" << (debug ? debug.get() : "(none)");
 }
 
-/// Selecting only video keeps decodebin3 from instantiating audio decoder branches. Done synchronously so the
+/// Select the media type of each decoder branch. Done synchronously so the
 /// selection is in place before decodebin3 falls back to its default one.
-void selectVideoStreams(GstMessage* message)
+void selectStreams(GstMessage* message)
 {
+    if (!GST_IS_ELEMENT(GST_MESSAGE_SRC(message))) {
+        return;
+    }
+    GstElementFactory* factory = gst_element_get_factory(GST_ELEMENT(GST_MESSAGE_SRC(message)));
+    if (!factory || g_strcmp0(GST_OBJECT_NAME(factory), "decodebin3") != 0) {
+        return;
+    }
     GstStreamCollection* collection = nullptr;
     gst_message_parse_stream_collection(message, &collection);
     const GStreamer::GstObjectPtr collectionRef = GStreamer::adoptObject(GST_OBJECT_CAST(collection));
@@ -63,7 +140,8 @@ void selectVideoStreams(GstMessage* message)
     const guint nStreams = gst_stream_collection_get_size(collection);
     for (guint i = 0; i < nStreams; ++i) {
         GstStream* stream = gst_stream_collection_get_stream(collection, i);
-        if (gst_stream_get_stream_type(stream) & GST_STREAM_TYPE_VIDEO) {
+        const bool audio = g_strcmp0(GST_OBJECT_NAME(GST_MESSAGE_SRC(message)), "source-audio-decoder") == 0;
+        if (gst_stream_get_stream_type(stream) & (audio ? GST_STREAM_TYPE_AUDIO : GST_STREAM_TYPE_VIDEO)) {
             selectedIds = g_list_append(selectedIds, g_strdup(gst_stream_get_stream_id(stream)));
         }
     }
@@ -332,11 +410,14 @@ void GstVideoReceiver::_resetPipelineState()
 
     _dotDumper.dump(_pipeline.get(), "pipeline-stopped");
 
+    gst_clear_object(&_audioMute);
+    gst_clear_object(&_audioDecoder);
     _pipeline.reset();
 
     // Owned by the (now released) pipeline.
     _tee = nullptr;
     _source = nullptr;
+    _audioSink = nullptr;
 
     if (std::exchange(_streaming, false)) {
         qCDebug(GstVideoReceiverLog) << "Streaming stopped" << _redactedUri();
@@ -358,6 +439,155 @@ void GstVideoReceiver::startDecoding(void* sink)
 void GstVideoReceiver::stopDecoding()
 {
     _runOnWorker([this]() { _decodingBranch.stop(); });
+}
+
+GstElement* GstVideoReceiver::_makeAudioSink(GstElement** audioMuteOut)
+{
+    GstElement* queue = nullptr;
+    GstElement* mute = nullptr;
+    GstElement* convert = nullptr;
+    GstElement* resample = nullptr;
+    GstElement* sink = nullptr;
+    GstElement* bin = nullptr;
+    bool releaseElements = true;
+
+    if (audioMuteOut) {
+        *audioMuteOut = nullptr;
+    }
+
+    do {
+        queue = gst_element_factory_make("queue", nullptr);
+        if (!queue) {
+            qCWarning(GstVideoReceiverLog) << "gst_element_factory_make('queue') failed for audio branch";
+            break;
+        }
+
+        g_object_set(queue, "leaky", 2, "max-size-buffers", 0, "max-size-bytes", 0, "max-size-time",
+                     G_GUINT64_CONSTANT(20000000), nullptr);
+
+        mute = gst_element_factory_make("volume", nullptr);
+        if (!mute) {
+            qCWarning(GstVideoReceiverLog) << "gst_element_factory_make('volume') failed for audio branch";
+            break;
+        }
+
+        g_object_set(mute, "mute", audioActive() ? FALSE : TRUE, nullptr);
+
+        convert = gst_element_factory_make("audioconvert", nullptr);
+        if (!convert) {
+            qCWarning(GstVideoReceiverLog) << "gst_element_factory_make('audioconvert') failed";
+            break;
+        }
+
+        resample = gst_element_factory_make("audioresample", nullptr);
+        if (!resample) {
+            qCWarning(GstVideoReceiverLog) << "gst_element_factory_make('audioresample') failed";
+            break;
+        }
+
+        sink = gst_element_factory_make("autoaudiosink", nullptr);
+        if (!sink) {
+            qCWarning(GstVideoReceiverLog) << "gst_element_factory_make('autoaudiosink') failed";
+            break;
+        }
+
+        g_object_set(sink, "sync", !_config.lowLatency, nullptr);
+
+        bin = gst_bin_new("audiosinkbin");
+        if (!bin) {
+            qCWarning(GstVideoReceiverLog) << "gst_bin_new('audiosinkbin') failed";
+            break;
+        }
+
+        gst_bin_add_many(GST_BIN(bin), queue, convert, resample, mute, sink, nullptr);
+        releaseElements = false;
+
+        if (!gst_element_link_many(queue, convert, resample, mute, sink, nullptr)) {
+            qCWarning(GstVideoReceiverLog) << "Unable to link audio sink branch";
+            break;
+        }
+
+        GstPad* pad = gst_element_get_static_pad(queue, "sink");
+        if (!pad) {
+            qCWarning(GstVideoReceiverLog) << "gst_element_get_static_pad(queue, 'sink') failed";
+            break;
+        }
+
+        GstPad* ghostPad = gst_ghost_pad_new("sink", pad);
+        gst_clear_object(&pad);
+        if (!ghostPad) {
+            qCWarning(GstVideoReceiverLog) << "gst_ghost_pad_new('sink') failed for audio branch";
+            break;
+        }
+
+        (void) gst_element_add_pad(bin, ghostPad);
+
+        if (audioMuteOut) {
+            *audioMuteOut = GST_ELEMENT(gst_object_ref(mute));
+        }
+
+        return bin;
+    } while (0);
+
+    if (releaseElements) {
+        gst_clear_object(&sink);
+        gst_clear_object(&resample);
+        gst_clear_object(&convert);
+        gst_clear_object(&mute);
+        gst_clear_object(&queue);
+    }
+
+    gst_clear_object(&bin);
+    return nullptr;
+}
+
+bool GstVideoReceiver::_ensureAudioBranch()
+{
+    if (!_pipeline) {
+        return false;
+    }
+
+    if (_audioDecoder) {
+        return true;
+    }
+
+    GstElement* audioDecoder = gst_element_factory_make("decodebin3", "source-audio-decoder");
+    GstElement* audioMute = nullptr;
+    GstElement* audioSink = audioDecoder ? _makeAudioSink(&audioMute) : nullptr;
+
+    if (!audioDecoder || !audioSink) {
+        qCWarning(GstVideoReceiverLog) << "Disabling stream audio playback due to incomplete audio branch";
+        gst_clear_object(&audioSink);
+        gst_clear_object(&audioMute);
+        gst_clear_object(&audioDecoder);
+        return false;
+    }
+
+    gst_clear_object(&_audioMute);
+    gst_clear_object(&_audioDecoder);
+    _audioMute = audioMute;
+    _audioDecoder = GST_ELEMENT(gst_object_ref(audioDecoder));
+
+    gst_bin_add_many(GST_BIN(_pipeline.get()), audioDecoder, audioSink, nullptr);
+    _audioSink = audioSink;
+    (void) g_signal_connect(audioDecoder, "pad-added", G_CALLBACK(_onNewPad), this);
+
+    if (!gst_element_sync_state_with_parent(audioDecoder) || !gst_element_sync_state_with_parent(audioSink)) {
+        qCWarning(GstVideoReceiverLog) << "Unable to sync audio branch state with parent";
+        return false;
+    }
+
+    return true;
+}
+
+void GstVideoReceiver::setAudioActive(bool active)
+{
+    VideoReceiver::setAudioActive(active);
+    _runOnWorker([this]() {
+        if (_audioMute) {
+            g_object_set(_audioMute, "mute", audioActive() ? FALSE : TRUE, nullptr);
+        }
+    });
 }
 
 void GstVideoReceiver::startRecording(const QString &videoFile, FILE_FORMAT format)
@@ -442,6 +672,13 @@ void GstVideoReceiver::dumpPipelineGraph(const QString& tag)
 
 void GstVideoReceiver::_onNewSourcePad(GstPad *pad)
 {
+    if (isAudioSourcePad(pad)) {
+        if (_wantsAudioPlayback() && _ensureAudioBranch()) {
+            (void) linkDynamicPadToElementSink(pad, _audioDecoder, "Source audio pad");
+        }
+        return;
+    }
+
     const GStreamer::GstPadPtr teeSink = GStreamer::adoptPad(gst_element_get_static_pad(_tee, "sink"));
     const GstPadLinkReturn linkResult = teeSink ? gst_pad_link(pad, teeSink.get()) : GST_PAD_LINK_WRONG_HIERARCHY;
     if (linkResult != GST_PAD_LINK_OK) {
@@ -460,6 +697,15 @@ void GstVideoReceiver::_onNewSourcePad(GstPad *pad)
     (void) _sourceEosProbe.add(pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, _eosProbe, this);
 
     _decodingBranch.onSourceStreaming();
+}
+
+bool GstVideoReceiver::_wantsAudioPlayback() const
+{
+#if defined(Q_OS_IOS)
+    return false;
+#else
+    return true;
+#endif
 }
 
 void GstVideoReceiver::_noteTeeFrame()
@@ -545,7 +791,7 @@ GstBusSyncReply GstVideoReceiver::_onBusSyncMessage(GstBus* /*bus*/, GstMessage*
             }
             break;
         case GST_MESSAGE_STREAM_COLLECTION:
-            selectVideoStreams(message);
+            selectStreams(message);
             break;
         case GST_MESSAGE_STATE_CHANGED:
             if (pipelineEnteredPlaying(message)) {
@@ -617,6 +863,8 @@ void GstVideoReceiver::_onPadAdded(GstElement* element, GstPad* pad)
 {
     if (element == _source) {
         _onNewSourcePad(pad);
+    } else if (element == _audioDecoder) {
+        (void) linkDynamicPadToElementSink(pad, _audioSink, "Audio decodebin output");
     } else if (element == _decodingBranch.decoder()) {
         _decodingBranch.onDecoderPad(pad);
     } else {
