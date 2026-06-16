@@ -116,6 +116,7 @@ jobs:
       QT_ANDROID_KEYSTORE_KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       QT_ANDROID_ABIS: ${{ matrix.android_abis }}
       HAS_PLAYSTORE_SECRET: ${{ secrets.GOOGLE_SERVICE_ACCOUNT != '' }}
+      HAS_ANDROID_DEFAULT_SETTINGS: ${{ secrets.QGROUNDCONTROL_INI_ANDROID != '' }}
 
     steps:
       - name: Harden Runner
@@ -151,6 +152,15 @@ jobs:
         run: |
           echo "ANDROID_SDK_ROOT=${RUNNER_TEMP}/android-sdk" >> "$GITHUB_ENV"
           echo "ANDROID_HOME=${RUNNER_TEMP}/android-sdk" >> "$GITHUB_ENV"
+
+      - name: Stage bundled Android settings
+        if: ${{ env.HAS_ANDROID_DEFAULT_SETTINGS == 'true' }}
+        shell: bash
+        env:
+          QGROUNDCONTROL_INI_ANDROID: ${{ secrets.QGROUNDCONTROL_INI_ANDROID }}
+        run: |
+          mkdir -p android/assets
+          printf '%s' "$QGROUNDCONTROL_INI_ANDROID" > android/assets/qgroundcontrol.ini
 
       - name: Build Setup (Android)
         id: setup
