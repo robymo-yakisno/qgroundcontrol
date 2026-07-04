@@ -26,11 +26,11 @@ struct Config
 {
     JitterBuffer jitterBuffer = JitterBuffer::DropOnLatency;
     int latencyMs = 80;
-    bool doRetransmission = true;  ///< RTSP only: plain UDP/TCP sources have no RTCP back-channel for NACKs.
+    bool doRetransmission = true;  ///< RTSP/WHEP only: plain UDP/TCP sources have no RTCP back-channel for NACKs.
 };
 
 /// Build a source bin (`source` [+ `tsdemux`] [+ `rtpjitterbuffer`] + `parsebin`)
-/// for `uri`. Supported schemes: rtsp/rtspt, tcp:// (MPEG-TS), udp:// (H.264 RTP),
+/// for `uri`. Supported schemes: rtsp/rtspt, http(s):// (WHEP), tcp:// (MPEG-TS), udp:// (H.264 RTP),
 /// udp265:// (H.265 RTP), mpegts:// (MPEG-TS over UDP). A UDP URI with port 0 listens on a free port.
 ///
 /// Ghost pads on the returned bin are wired lazily; for `rtspsrc`/`tsdemux`/`parsebin`
@@ -43,8 +43,12 @@ GstElement* create(const QString& uri, const Config& config);
 /// rtspsrc waits this long for UDP data before it retries the session over TCP ("timeout").
 inline constexpr std::chrono::milliseconds kRtspUdpTimeout{5000};
 
+/// How long whepclientsrc may take to set up its WebRTC session (the HTTP offer/answer, ICE checks and the DTLS
+/// handshake) before its first data.
+inline constexpr std::chrono::milliseconds kWhepSetupTimeout{5000};
+
 /// How much longer than the stream timeout the first data for @p uri may take: kRtspUdpTimeout for RTSP, whose UDP to
-/// TCP fallback must not be cut short; zero for other sources.
+/// TCP fallback must not be cut short; kWhepSetupTimeout for WHEP; zero for other sources.
 std::chrono::milliseconds connectGracePeriod(const QString& uri);
 
 /// Holds an RTP H.264/H.265 depayloader's byte-stream output back until a full parameter set (SPS and PPS, plus VPS

@@ -62,6 +62,7 @@ constexpr VideoSettingReactionEntry kVideoSettingReactions[] = {
     {&VideoSettings::udpUrl, VideoSettingReaction::Reconfigure},
     {&VideoSettings::tcpUrl, VideoSettingReaction::Reconfigure},
     {&VideoSettings::rtspUrl, VideoSettingReaction::Reconfigure},
+    {&VideoSettings::whepUrl, VideoSettingReaction::Reconfigure},
     {&VideoSettings::rtspTimeout, VideoSettingReaction::Reconfigure},
     {&VideoSettings::lowLatencyMode, VideoSettingReaction::Reconfigure},
     {&VideoSettings::rtpJitterLatencyMs, VideoSettingReaction::Reconfigure},

@@ -15,6 +15,7 @@ enum class Transport : uint8_t
     RtpUdpH265,  ///< udp265://
     MpegTsUdp,   ///< mpegts://
     MpegTsTcp,   ///< tcp://
+    Whep,        ///< http://, https:// (WebRTC-HTTP Egress Protocol)
 };
 
 /// The transport for @p url's scheme, case-insensitively; nullopt when create() doesn't support it.

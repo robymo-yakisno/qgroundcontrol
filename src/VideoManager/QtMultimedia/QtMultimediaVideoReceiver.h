@@ -48,7 +48,8 @@ public:
 
     /// The source for @p uri, one of VideoStreamResolver's: rtsp(s):// and tcp:// as they are, rtspt:// as rtsp:// over
     /// TCP, as GStreamer plays it, mpegts:// as udp://, and udp:// (H.264) or udp265:// (H.265) RTP as an SDP
-    /// description. Other URLs play as they are; nullopt for an invalid one.
+    /// description. Other URLs play as they are; nullopt for an invalid one, and for http(s):// (WHEP), which only
+    /// GStreamer plays.
     static std::optional<Source> playerSource(const QString& uri);
 
 protected:

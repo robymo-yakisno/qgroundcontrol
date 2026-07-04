@@ -19,6 +19,7 @@ VideoStreamResolver::Settings manualSettings(const QString& videoSource)
     settings.udpUrl = QStringLiteral("0.0.0.0:5600");
     settings.tcpUrl = QStringLiteral("192.168.1.2:5000");
     settings.rtspUrl = QStringLiteral("rtsp://user:pass@cam.local:554/manual");
+    settings.whepUrl = QStringLiteral("http://cam.local:8889/live/whep");
     settings.rtspTimeoutSec = kRtspTimeoutSec;
     return settings;
 }
@@ -55,6 +56,8 @@ void VideoStreamResolverTest::_testResolve_data()
     QTest::newRow("MPEG-TS") << QString(VideoSettings::videoSourceMPEGTS) << QString() << kNoStreamInfo << h264 << QString() << primary << QStringLiteral("mpegts://0.0.0.0:5600") << timeout;
     QTest::newRow("RTSP") << rtsp << QString() << kNoStreamInfo << h264 << QString() << primary << QStringLiteral("rtsp://user:pass@cam.local:554/manual") << rtspTimeout;
     QTest::newRow("RTSP without URL") << rtsp << QStringLiteral("") << kNoStreamInfo << h264 << QString() << primary << QString() << 0;
+    QTest::newRow("WHEP") << QString(VideoSettings::videoSourceWHEP) << QString() << kNoStreamInfo << h264 << QString() << primary << QStringLiteral("http://cam.local:8889/live/whep") << timeout;
+    QTest::newRow("WHEP without URL") << QString(VideoSettings::videoSourceWHEP) << QStringLiteral("") << kNoStreamInfo << h264 << QString() << primary << QString() << 0;
     QTest::newRow("TCP") << QString(VideoSettings::videoSourceTCP) << QString() << kNoStreamInfo << h264 << QString() << primary << QStringLiteral("tcp://192.168.1.2:5000") << timeout;
     QTest::newRow("3DR Solo") << QString(VideoSettings::videoSource3DRSolo) << QString() << kNoStreamInfo << h264 << QString() << primary << QStringLiteral("udp://0.0.0.0:5600") << timeout;
     QTest::newRow("Parrot Discovery") << QString(VideoSettings::videoSourceParrotDiscovery) << QString() << kNoStreamInfo << h264 << QString() << primary << QStringLiteral("udp://0.0.0.0:8888") << timeout;
@@ -70,6 +73,7 @@ void VideoStreamResolverTest::_testResolve_data()
     QTest::newRow("auto UDP URI") << udp264 << QString() << int(VIDEO_STREAM_TYPE_RTPUDP) << h264 << QStringLiteral("udp://1.2.3.4:5600") << primary << QStringLiteral("udp://1.2.3.4:5600") << timeout;
     QTest::newRow("auto MPEG-TS port") << udp264 << QString() << int(VIDEO_STREAM_TYPE_MPEG_TS) << h264 << QStringLiteral("5603") << primary << QStringLiteral("mpegts://0.0.0.0:5603") << timeout;
     QTest::newRow("auto TCP over manual TCP") << QString(VideoSettings::videoSourceTCP) << QString() << int(VIDEO_STREAM_TYPE_TCP_MPEG) << h264 << QStringLiteral("tcp://10.0.0.1:5000") << primary << QStringLiteral("tcp://10.0.0.1:5000") << timeout;
+    QTest::newRow("auto WHEP over manual UDP") << udp264 << QString() << int(VIDEO_STREAM_TYPE_WHEP) << h264 << QStringLiteral("https://10.0.0.1/whep") << primary << QStringLiteral("https://10.0.0.1/whep") << timeout;
     QTest::newRow("auto without URI falls back to manual") << udp264 << QString() << int(VIDEO_STREAM_TYPE_RTSP) << h264 << QString() << primary << QStringLiteral("udp://0.0.0.0:5600") << timeout;
     QTest::newRow("auto thermal RTSP") << rtsp << QString() << int(VIDEO_STREAM_TYPE_RTSP) << h264 << QStringLiteral("rtsp://10.0.0.1/thermal") << thermal << QStringLiteral("rtsp://10.0.0.1/thermal") << rtspTimeout;
     QTest::newRow("auto thermal UDP port") << rtsp << QString() << int(VIDEO_STREAM_TYPE_RTPUDP) << h264 << QStringLiteral("5610") << thermal << QStringLiteral("udp://0.0.0.0:5610") << timeout;
@@ -93,6 +97,7 @@ void VideoStreamResolverTest::_testResolve()
         settings.udpUrl = address;
         settings.tcpUrl = address;
         settings.rtspUrl = address;
+        settings.whepUrl = address;
     }
 
     std::unique_ptr<QGCVideoStreamInfo> streamInfo;
@@ -170,6 +175,7 @@ void VideoStreamResolverTest::_testNetworkSources_data()
     QTest::newRow("no video") << QString(VideoSettings::videoSourceNoVideo) << false;
     QTest::newRow("UVC camera") << QStringLiteral("Integrated Camera") << false;
     QTest::newRow("RTSP") << QString(VideoSettings::videoSourceRTSP) << true;
+    QTest::newRow("WHEP") << QString(VideoSettings::videoSourceWHEP) << true;
     QTest::newRow("Herelink Hotspot") << QString(VideoSettings::videoSourceHerelinkHotspot) << true;
 }
 

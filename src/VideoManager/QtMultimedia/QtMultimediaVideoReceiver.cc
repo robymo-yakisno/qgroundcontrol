@@ -100,6 +100,10 @@ std::optional<QtMultimediaVideoReceiver::Source> QtMultimediaVideoReceiver::play
         return std::nullopt;
     }
     const QString scheme = url.scheme().toLower();
+    // WHEP signals a WebRTC session over HTTP(S), which FFmpeg can't do; only GStreamer plays it.
+    if ((scheme == QStringLiteral("http")) || (scheme == QStringLiteral("https"))) {
+        return std::nullopt;
+    }
     if ((scheme == QStringLiteral("udp")) || (scheme == QStringLiteral("udp265"))) {
         if (url.port() <= 0) {
             return std::nullopt;

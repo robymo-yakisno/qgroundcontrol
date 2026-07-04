@@ -155,6 +155,8 @@ void QtMultimediaVideoReceiverTest::_testUnplayableUri()
     QVERIFY(!QtMultimediaVideoReceiver::playerSource(QString()));
     QVERIFY(!QtMultimediaVideoReceiver::playerSource(QStringLiteral("0.0.0.0:5600")));
     QVERIFY(!QtMultimediaVideoReceiver::playerSource(QStringLiteral("udp://0.0.0.0")));
+    QVERIFY(!QtMultimediaVideoReceiver::playerSource(QStringLiteral("http://10.0.0.1:8889/live/whep")));
+    QVERIFY(!QtMultimediaVideoReceiver::playerSource(QStringLiteral("https://10.0.0.1/live/whep")));
 
     ReceiverUnderTest stream(QStringLiteral("udp://0.0.0.0"));
     expectLogMessage("Video.QtMultimediaVideoReceiver", QtWarningMsg, QRegularExpression(QStringLiteral("can't play")));

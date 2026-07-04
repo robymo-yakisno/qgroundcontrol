@@ -69,14 +69,24 @@
       ],
       "apple": [
         "applemedia",
-        "dav1d"
+        "dav1d",
+        "dtls",
+        "nice",
+        "rswebrtc",
+        "srtp",
+        "webrtc"
       ],
       "windows": [
         "d3d",
         "d3d11",
         "d3d12",
         "dav1d",
-        "nvcodec"
+        "dtls",
+        "nice",
+        "nvcodec",
+        "rswebrtc",
+        "srtp",
+        "webrtc"
       ],
       "linux": [
         "nvcodec",

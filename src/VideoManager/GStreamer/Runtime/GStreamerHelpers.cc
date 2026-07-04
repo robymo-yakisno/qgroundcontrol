@@ -100,6 +100,12 @@ void sendEventAsync(GstPad* pad, GstEvent* event)
         [](gpointer data) { delete static_cast<PendingEvent*>(data); });
 }
 
+const char* elementFactoryName(GstElement* element)
+{
+    GstElementFactory* factory = gst_element_get_factory(element);
+    return factory ? gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory)) : nullptr;
+}
+
 GstPadPtr firstSrcPad(GstElement* element)
 {
     GstPad* first = nullptr;

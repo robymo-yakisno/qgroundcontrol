@@ -3,7 +3,7 @@
 #include "GStreamerTestBase.h"
 
 /// GStreamer::SourceFactory without a stream: the source bin built for each URI scheme, its jitter-buffer and
-/// retransmission policy, RTSP stream selection, dynamic-pad linking and the parameter-set gate.
+/// retransmission policy, RTSP stream selection, the WHEP source, dynamic-pad linking and the parameter-set gate.
 class GstSourceFactoryTest : public GStreamerTestBase
 {
     Q_OBJECT
@@ -19,6 +19,9 @@ private slots:
     void _testSourceFactoryRtspSelectsOnlyVideoStreams_data();
     void _testSourceFactoryRtspSelectsOnlyVideoStreams();
     void _testSourceFactoryRtspCredentials();
+    void _testSourceFactoryWhepSource();
+    void _testSourceFactoryWhepJitterBufferPolicy_data();
+    void _testSourceFactoryWhepJitterBufferPolicy();
     void _testSourceFactoryRejectsBadUri();
     void _testSourceFactoryTcpMpegTs();
     void _testSourceFactoryRejectsBadTcpUri();
