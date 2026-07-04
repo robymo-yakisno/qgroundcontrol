@@ -513,6 +513,11 @@ GstElementPtr buildWhepSource(const QString& uri, const QUrl& sourceUrl, const C
     gst_child_proxy_set(GST_CHILD_PROXY(source.get()), "signaller::whep-endpoint", whepEndpoint.constData(), nullptr);
     g_object_set(source.get(), "do-retransmission", config.doRetransmission ? TRUE : FALSE, nullptr);
     gst_util_set_object_arg(G_OBJECT(source.get()), "audio-codecs", "< >");
+
+    // QGC supports every codec in whepclientsrc's default list. This
+    // restriction is precautionary as there was a concern that advertising the
+    // full list could cause playback issues.
+    gst_util_set_object_arg(G_OBJECT(source.get()), "video-codecs", "< H264, H265 >");
     return source;
 }
 #endif
