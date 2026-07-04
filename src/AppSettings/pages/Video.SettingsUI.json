@@ -69,12 +69,16 @@
         },
         {
             "heading": "Connection",
-            "keywords": ["rtsp", "tcp", "udp", "mpegts", "video url", "stream url"],
+            "keywords": ["rtsp", "whep", "tcp", "udp", "mpegts", "video url", "stream url"],
             "showWhen": "!sourceDisabled && !autoStreamConfig && isStreamSource",
             "controls": [
                 {
                     "setting": "videoSettings.rtspUrl",
                     "showWhen": "videoSource === QGroundControl.settingsManager.videoSettings.rtspVideoSource"
+                },
+                {
+                    "setting": "videoSettings.whepUrl",
+                    "showWhen": "videoSource === QGroundControl.settingsManager.videoSettings.whepVideoSource"
                 },
                 {
                     "setting": "videoSettings.tcpUrl",

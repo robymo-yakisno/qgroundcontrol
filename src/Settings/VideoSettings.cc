@@ -28,6 +28,7 @@ DECLARE_SETTINGGROUP(Video, "Video")
     // Setup enum values for videoSource settings into meta data
     QVariantList videoSourceList;
     videoSourceList.append(videoSourceRTSP);
+    videoSourceList.append(videoSourceWHEP);
     videoSourceList.append(videoSourceUDPH264);
     videoSourceList.append(videoSourceUDPH265);
     videoSourceList.append(videoSourceTCP);
@@ -115,6 +116,7 @@ DECLARE_SETTINGSFACT(VideoSettings, streamEnabled)
 DECLARE_SETTINGSFACT(VideoSettings, disableWhenDisarmed)
 DECLARE_SETTINGSFACT(VideoSettings, udpUrl)
 DECLARE_SETTINGSFACT(VideoSettings, rtspUrl)
+DECLARE_SETTINGSFACT(VideoSettings, whepUrl)
 DECLARE_SETTINGSFACT(VideoSettings, tcpUrl)
 DECLARE_SETTINGSFACT(VideoSettings, uvcCameraFormat)
 DECLARE_SETTINGSFACT(VideoSettings, uvcCameraRotation)

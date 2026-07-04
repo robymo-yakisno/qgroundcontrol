@@ -22,6 +22,9 @@ std::optional<Transport> transportFor(const QUrl& url)
     if (scheme == QLatin1String("tcp")) {
         return Transport::MpegTsTcp;
     }
+    if ((scheme == QLatin1String("http")) || (scheme == QLatin1String("https"))) {
+        return Transport::Whep;
+    }
     return std::nullopt;
 }
 

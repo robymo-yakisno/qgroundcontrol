@@ -141,7 +141,13 @@ enum class SourceElement : uint8_t
     Rtsp,       ///< rtspsrc, which runs its own jitterbuffer
     TcpClient,  ///< tcpclientsrc
     Udp,        ///< udpsrc
+    Whep,       ///< whepclientsrc, whose webrtcbin runs its own jitterbuffer
 };
+
+constexpr bool ownsJitterBuffer(SourceElement element)
+{
+    return (element == SourceElement::Rtsp) || (element == SourceElement::Whep);
+}
 
 // What create() builds for one Transport.
 struct TransportSpec
@@ -165,6 +171,8 @@ constexpr TransportSpec specFor(Transport transport)
             return {SourceElement::Udp, nullptr, true, false};
         case Transport::MpegTsTcp:
             return {SourceElement::TcpClient, nullptr, true, false};
+        case Transport::Whep:
+            return {SourceElement::Whep, nullptr, false, false};
     }
     return {SourceElement::Udp, nullptr, false, false};
 }
@@ -189,7 +197,7 @@ struct DynamicLinkContext
 {
     GstElement* binParser;
     guint latencyMs;
-    bool insertJitterBuffer;  // false for RTSP (rtspsrc has its own internal jitterbuffer) and JitterBuffer::None
+    bool insertJitterBuffer;  // false for RTSP/WHEP (sources with their own jitterbuffer) and JitterBuffer::None
 };
 
 // Inserts a running rtpjitterbuffer linked to the parser; returns it (bin-owned) or nullptr to link directly.
@@ -255,8 +263,8 @@ void linkPad(GstElement* element, GstPad* pad, gpointer data)
         return;
     }
 
-    // Insert a jitterbuffer ahead of the parser for RTP pads on non-RTSP dynamic sources, matching the
-    // static path's policy. RTSP is excluded: rtspsrc owns an internal jitterbuffer (no double-buffering).
+    // Insert a jitterbuffer ahead of the parser for RTP pads on dynamic sources, matching the static path's policy.
+    // RTSP and WHEP are excluded: their sources own an internal jitterbuffer (no double-buffering).
     GstElement* dynamicBuffer = nullptr;
     if (isRtp && ctx->insertJitterBuffer) {
         dynamicBuffer = insertDynamicJitterBuffer(ctx);
@@ -297,6 +305,50 @@ GstElementPtr buildTcpSource(const QUrl& sourceUrl)
     }
 
     g_object_set(source.get(), "host", host.toUtf8().constData(), "port", static_cast<int>(port), nullptr);
+    return source;
+}
+
+// webrtcbin forwards its latency to the jitterbuffers it creates; whepclientsrc doesn't expose it.
+void configureWebRtcBin([[maybe_unused]] GstBin* bin, [[maybe_unused]] GstBin* subBin, GstElement* element,
+                        gpointer data)
+{
+    if (g_strcmp0(elementFactoryName(element), "webrtcbin") == 0) {
+        g_object_set(element, "latency", GPOINTER_TO_UINT(data), nullptr);
+    }
+}
+
+GstElementPtr buildWhepSource(const QString& uri, const QUrl& sourceUrl, const Config& config, guint latencyMs)
+{
+    if (sourceUrl.host().isEmpty()) {
+        qCWarning(GstSourceFactoryLog) << "Missing host in WHEP URI"
+                                       << QGCNetworkHelper::redactedUrlForLogging(sourceUrl);
+        return nullptr;
+    }
+
+    GstElementPtr source = makeElement("whepclientsrc", "source");
+    if (!source) {
+        qCWarning(GstSourceFactoryLog) << "gst_element_factory_make('whepclientsrc') failed";
+        return nullptr;
+    }
+
+    GObject* signaller = nullptr;
+    g_object_get(source.get(), "signaller", &signaller, nullptr);
+    if (!signaller) {
+        qCWarning(GstSourceFactoryLog) << "whepclientsrc has no signaller";
+        return nullptr;
+    }
+    g_object_set(signaller, "whep-endpoint", uri.toUtf8().constData(), nullptr);
+    g_object_unref(signaller);
+
+    // As for RTSP: the source owns the jitterbuffer, so None maps to zero playout latency and no retransmission.
+    const guint whepLatencyMs = (config.jitterBuffer == JitterBuffer::None) ? 0u : latencyMs;
+    const gboolean doRetransmission =
+        ((config.jitterBuffer != JitterBuffer::None) && config.doRetransmission) ? TRUE : FALSE;
+    // No STUN server: the default is a public one, which a ground station on a local link can't reach.
+    g_object_set(source.get(), "do-retransmission", doRetransmission, "stun-server", nullptr, nullptr);
+    gst_util_set_object_arg(G_OBJECT(source.get()), "audio-codecs", "< >");
+    (void) g_signal_connect(source.get(), "deep-element-added", G_CALLBACK(configureWebRtcBin),
+                            GUINT_TO_POINTER(whepLatencyMs));
     return source;
 }
 
@@ -423,7 +475,7 @@ GstElement* addTsDemux(GstElement* bin, GstElement* upstream)
 // Wire upstream → (optional rtpjitterbuffer) → binParser, topology chosen by RTP probe (MPEG-TS
 // links via pad-added). Created elements join @p bin; returns false (logged) on failure.
 bool linkSourceToParser(GstElement* bin, GstElement* upstream, GstElement* binParser, const Config& config,
-                        guint latencyMs, bool isMpegTs, bool isRtsp)
+                        guint latencyMs, bool isMpegTs, bool sourceOwnsJitterBuffer)
 {
     // MPEG-TS exposes elementary streams via tsdemux dynamic src pads (none at NULL state) and
     // isn't raw RTP, so skip the RTP probe and link via pad-added when the video pad appears.
@@ -450,10 +502,10 @@ bool linkSourceToParser(GstElement* bin, GstElement* upstream, GstElement* binPa
             }
         }
     } else {
-        // linkPad applies the jitter-buffer policy itself when an application/x-rtp pad appears on a
-        // non-RTSP source. Context lifetime is tied to binParser (freed on its finalize).
-        auto* ctx =
-            new DynamicLinkContext{binParser, latencyMs, !isRtsp && (config.jitterBuffer != JitterBuffer::None)};
+        // linkPad applies the jitter-buffer policy itself when an application/x-rtp pad appears on a source
+        // without its own jitterbuffer. Context lifetime is tied to binParser (freed on its finalize).
+        auto* ctx = new DynamicLinkContext{binParser, latencyMs,
+                                           !sourceOwnsJitterBuffer && (config.jitterBuffer != JitterBuffer::None)};
         g_object_set_data_full(G_OBJECT(binParser), "qgc-dynamic-link-ctx", ctx,
                                [](gpointer p) { delete static_cast<DynamicLinkContext*>(p); });
         (void) g_signal_connect(upstream, "pad-added", G_CALLBACK(linkPad), ctx);
@@ -532,6 +584,9 @@ GstElement* create(const QString& uri, const Config& config)
         case SourceElement::Udp:
             source = buildUdpSource(sourceUrl, spec.rtpEncoding);
             break;
+        case SourceElement::Whep:
+            source = buildWhepSource(uri, sourceUrl, config, latencyMs);
+            break;
     }
     if (!source) {
         return nullptr;
@@ -581,7 +636,8 @@ GstElement* create(const QString& uri, const Config& config)
         if (!addStaticGhostPad(binParser)) {
             return nullptr;
         }
-    } else if (!linkSourceToParser(bin.get(), upstream, binParser, config, latencyMs, spec.demuxMpegTs, isRtsp)) {
+    } else if (!linkSourceToParser(bin.get(), upstream, binParser, config, latencyMs, spec.demuxMpegTs,
+                                   ownsJitterBuffer(spec.element))) {
         return nullptr;
     }
 
@@ -590,7 +646,14 @@ GstElement* create(const QString& uri, const Config& config)
 
 std::chrono::milliseconds connectGracePeriod(const QString& uri)
 {
-    return (transportFor(QUrl(uri)) == Transport::Rtsp) ? kRtspUdpTimeout : std::chrono::milliseconds{0};
+    const std::optional<Transport> transport = transportFor(QUrl(uri));
+    if (transport == Transport::Rtsp) {
+        return kRtspUdpTimeout;
+    }
+    if (transport == Transport::Whep) {
+        return kWhepSetupTimeout;
+    }
+    return std::chrono::milliseconds{0};
 }
 
 }  // namespace GStreamer::SourceFactory

@@ -388,7 +388,7 @@ void VideoManagerTest::_testAutoStreamLeavesSettingsAlone()
 {
     QList<QSharedPointer<QSignalSpy>> settingSpies;
     for (Fact* fact : {_videoSettings->videoSource(), _videoSettings->udpUrl(), _videoSettings->rtspUrl(),
-                       _videoSettings->tcpUrl()}) {
+                       _videoSettings->whepUrl(), _videoSettings->tcpUrl()}) {
         settingSpies.append(QSharedPointer<QSignalSpy>::create(fact, &Fact::rawValueChanged));
     }
 
@@ -910,6 +910,9 @@ void VideoManagerTest::_testStreamUriAndTransport_data()
     // The URI is shown in the Fly View, so it loses credentials and query values.
     QTest::newRow("rtsp") << QString(VideoSettings::videoSourceRTSP) << "rtsp://pilot:secret@cam.local/live?token=abc"
                           << "rtsp://cam.local/live?token=REDACTED" << "RTSP";
+    QTest::newRow("whep") << QString(VideoSettings::videoSourceWHEP)
+                          << "https://pilot:secret@cam.local/live/whep?token=abc"
+                          << "https://cam.local/live/whep?token=REDACTED" << "WHEP";
 }
 
 void VideoManagerTest::_testStreamUriAndTransport()
@@ -922,9 +925,10 @@ void VideoManagerTest::_testStreamUriAndTransport()
     VideoStreamController* const stream = _videoManager->primaryStream();
     QSignalSpy uriSpy(stream, &VideoStreamController::uriChanged);
     _facts->set(_videoSettings->videoSource(), source);
-    Fact* const urlFact = (source == QString(VideoSettings::videoSourceRTSP))  ? _videoSettings->rtspUrl()
-                          : (source == QString(VideoSettings::videoSourceTCP)) ? _videoSettings->tcpUrl()
-                                                                               : _videoSettings->udpUrl();
+    Fact* const urlFact = (source == QString(VideoSettings::videoSourceRTSP))   ? _videoSettings->rtspUrl()
+                          : (source == QString(VideoSettings::videoSourceWHEP)) ? _videoSettings->whepUrl()
+                          : (source == QString(VideoSettings::videoSourceTCP))  ? _videoSettings->tcpUrl()
+                                                                                : _videoSettings->udpUrl();
     _facts->set(urlFact, url);
     _settle();
 

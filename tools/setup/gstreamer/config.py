@@ -66,6 +66,11 @@ PLUGINS_WITHOUT_OPTION = {
     "videoscale": "folded into videoconvertscale in GStreamer 1.22",
     "dav1d": "gst-plugins-rs, which needs Rust and this build leaves out",
     "androidmedia": "Android, which Cerbero builds",
+    "rswebrtc": "gst-plugins-rs, which needs Rust and this build leaves out",
+    "dtls": "WHEP's WebRTC stack, which is of no use without rswebrtc",
+    "nice": "WHEP's WebRTC stack, which is of no use without rswebrtc",
+    "srtp": "WHEP's WebRTC stack, which is of no use without rswebrtc",
+    "webrtc": "WHEP's WebRTC stack, which is of no use without rswebrtc",
 }
 
 # The gstreamer.plugins key of build-config.json that adds to the common plugins on each Meson platform.

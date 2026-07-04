@@ -29,6 +29,9 @@ void requestKeyframe(GstPad* sinkPad);
 /// never blocks the caller. Takes @p event; the pad is kept alive until the send returns.
 void sendEventAsync(GstPad* pad, GstEvent* event);
 
+/// The name of @p element's factory ("rtph264depay", ...), or null for an element made without one.
+const char* elementFactoryName(GstElement* element);
+
 /// @p element's first src pad, or null when it has none (yet).
 GstPadPtr firstSrcPad(GstElement* element);
 

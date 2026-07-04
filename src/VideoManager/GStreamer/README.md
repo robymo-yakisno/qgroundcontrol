@@ -35,7 +35,7 @@ builds without GStreamer, and where `VideoSettings::videoBackend` picks it.
 | `StreamWatchdog` | Notices stalled source or decoder output on a monotonic clock (allowing `rtspsrc` its UDP→TCP fallback before the first frame). |
 | `PipelineDotDumper` | Writes the pipeline's `.dot` graphs; see [Pipeline Observability](#pipeline-observability). |
 | `GstSourceFactory` | Constructs the source element from the stream URI and applies RTP jitter-buffer policy for `application/x-rtp` sources. |
-| `GstSourceUri` | The transport each video URI scheme selects (`rtsp*`, `udp`, `udp265`, `mpegts`, `tcp`), without GStreamer. |
+| `GstSourceUri` | The transport each video URI scheme selects (`rtsp*`, `udp`, `udp265`, `mpegts`, `tcp`, and `http(s)` for WHEP), without GStreamer. |
 | `GstRtspSource` | The `rtspsrc` the source factory builds: the RTSP URI check, transports, timeouts, latency, retransmission timing and video-only stream selection. |
 | `GstH26xParameterSetGate` | H.264/H.265 setup for the depayloaders and parsers the source factory builds or `parsebin` plugs: parameter sets repeated at every IDR, keyframe requests after loss, and output held until a full parameter set arrives. |
 | `QGCQVideoSinkController` | GUI-thread companion of the display sink; see [`gstqgc`](#gstqgc--custom-gstreamer-plugin). |
@@ -337,6 +337,10 @@ gst-launch-1.0 udpsrc port=5600 caps='application/x-rtp, media=(string)video, cl
   `rtspt://` over TCP only.
 - `udp://`: H.264 over RTP/UDP; `udp265://`: H.265 over RTP/UDP. Port 0 listens on a free port.
 - `mpegts://`: MPEG-TS over UDP; `tcp://`: MPEG-TS over TCP.
+- `http://`, `https://`: WHEP (WebRTC) through `whepclientsrc`, with no STUN server. Needs the `rswebrtc`, `webrtc`,
+  `nice`, `dtls` and `srtp` plugins, which the Windows and Apple packages ship. Android leaves them out because its
+  static plugins can't link two Rust plugins (`dav1d` and `rswebrtc` each carry Rust's allocator); Linux uses whatever
+  the system has.
 
 ### Automated tests
 
@@ -348,7 +352,7 @@ gst-launch-1.0 udpsrc port=5600 caps='application/x-rtp, media=(string)video, cl
 | `GstQgcSinkTest` | Unit | `qgcqvideosink` and `qgcvideosinkbin` as elements: construction, caps, allocation, CPU zero-copy frames, and frames pushed straight into the sink (latest frame only, with the superseded ones counted consistently with the delivered ones, flushes, orientation tags, crop, renegotiation), and the render target it reads. |
 | `GstQgcSinkControllerTest` | Unit | `QGCQVideoSinkController` binding `qgcqvideosink` to a `QVideoSink`: inactive without a window, and unbound when its owner or the `QVideoSink` goes away or the sink is released. |
 | `GstQgcVideoFormatsTest` | Unit | The sink's format tables: GStreamer formats, colorimetry and orientations mapped to Qt's, and the formats the sink advertises. |
-| `GstSourceFactoryTest` | Unit | The source bin built for each URI, its jitter-buffer and retransmission policy, RTSP stream selection, credentials and keyframe requests from RTSP depayloaders, dynamic-pad linking and the parameter-set gate, without a stream. |
+| `GstSourceFactoryTest` | Unit | The source bin built for each URI, its jitter-buffer and retransmission policy, RTSP stream selection, credentials and keyframe requests from RTSP depayloaders, the WHEP source, dynamic-pad linking and the parameter-set gate, without a stream. |
 | `GstHwBuffersTest` | Unit | The `HwBuffers` paths without a GPU: path selection, import caches, frame-texture bundles on the Null `QRhi`, DMABuf modifier policy, CPU fallbacks, crop matrices and telemetry. |
 | `GstQgcSinkHarnessTest` | Unit | `qgcvideosinkbin` under GstHarness, bound to a `QVideoSink`: resolution and format changes renegotiated through the converter, and orientation tags crossing it. |
 | `GstSourceFactoryHarnessTest` | Unit | The parameter-set gate on a real H.264/H.265 depayloader under GstHarness, fed RTP payloaded from the test streams as a receiver joining mid-GOP sees it. |

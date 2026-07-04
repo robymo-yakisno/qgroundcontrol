@@ -2,18 +2,13 @@
 
 #include <gst/gst.h>
 
+#include "GStreamerHelpers.h"
 #include "GstScoped.h"
 #include "GstSourceFactory.h"
 
 namespace GStreamer::SourceFactory {
 
 namespace {
-
-const char* elementFactoryName(GstElement* element)
-{
-    GstElementFactory* factory = gst_element_get_factory(element);
-    return factory ? gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory)) : nullptr;
-}
 
 bool isH26xRtpDepayloader(const char* factoryName)
 {

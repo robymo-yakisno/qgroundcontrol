@@ -324,17 +324,95 @@ void GstSourceFactoryTest::_testSourceFactoryRtspCredentials()
     QVERIFY(!noUser || (noUser[0] == '\0'));
 }
 
+void GstSourceFactoryTest::_testSourceFactoryWhepSource()
+{
+    GSTTEST_SKIP_UNLESS_FACTORIES("whepclientsrc");
+
+    GStreamer::SourceFactory::Config config;
+    const GStreamer::GstElementPtr bin = GstTest::createSource(QStringLiteral("http://127.0.0.1:8889/whep"), config);
+    QVERIFY(bin);
+
+    const GStreamer::GstElementPtr src = GstTest::findByFactory(bin.get(), "whepclientsrc");
+    QVERIFY2(src, "http:// must build a whepclientsrc when WHEP is enabled");
+
+    GObject* signaller = nullptr;
+    g_object_get(src.get(), "signaller", &signaller, nullptr);
+    QVERIFY2(signaller, "whepclientsrc must provide a signaller object");
+    const auto unrefSignaller = qScopeGuard([&] { g_object_unref(signaller); });
+
+    gchar* rawEndpoint = nullptr;
+    g_object_get(signaller, "whep-endpoint", &rawEndpoint, nullptr);
+    const GStreamer::GCharPtr endpoint = GStreamer::adoptGChar(rawEndpoint);
+    QCOMPARE(QString::fromUtf8(endpoint.get()), QStringLiteral("http://127.0.0.1:8889/whep"));
+
+    gchar* rawStunServer = nullptr;
+    g_object_get(src.get(), "stun-server", &rawStunServer, nullptr);
+    const GStreamer::GCharPtr stunServer = GStreamer::adoptGChar(rawStunServer);
+    QVERIFY2(!stunServer, "whepclientsrc must not contact a public STUN server");
+}
+
+void GstSourceFactoryTest::_testSourceFactoryWhepJitterBufferPolicy_data()
+{
+    QTest::addColumn<int>("jitterBufferPolicy");
+    QTest::addColumn<guint>("expectedLatencyMs");
+    QTest::addColumn<bool>("expectedRetransmission");
+
+    QTest::newRow("drop-on-latency") << int(GStreamer::SourceFactory::JitterBuffer::DropOnLatency) << 80u << true;
+    QTest::newRow("none") << int(GStreamer::SourceFactory::JitterBuffer::None) << 0u << false;
+}
+
+void GstSourceFactoryTest::_testSourceFactoryWhepJitterBufferPolicy()
+{
+    GSTTEST_SKIP_UNLESS_FACTORIES("whepclientsrc", "webrtcbin");
+
+    QFETCH(int, jitterBufferPolicy);
+    QFETCH(guint, expectedLatencyMs);
+    QFETCH(bool, expectedRetransmission);
+
+    GStreamer::SourceFactory::Config config;
+    config.jitterBuffer = static_cast<GStreamer::SourceFactory::JitterBuffer>(jitterBufferPolicy);
+    config.latencyMs = 80;
+    config.doRetransmission = true;
+
+    const GStreamer::GstElementPtr bin = GstTest::createSource(QStringLiteral("http://127.0.0.1:8889/whep"), config);
+    QVERIFY(bin);
+    const GStreamer::GstElementPtr src = GstTest::findByFactory(bin.get(), "whepclientsrc");
+    QVERIFY(src);
+
+    gboolean doRetransmission = FALSE;
+    g_object_get(src.get(), "do-retransmission", &doRetransmission, nullptr);
+    QCOMPARE(doRetransmission, expectedRetransmission ? TRUE : FALSE);
+
+    // whepclientsrc creates its webrtcbin only once signalling starts; add one as it would.
+    GstElement* const webrtcbin = gst_element_factory_make("webrtcbin", nullptr);
+    QVERIFY(webrtcbin);
+    QVERIFY(gst_bin_add(GST_BIN(src.get()), webrtcbin));
+    guint latencyMs = G_MAXUINT;
+    g_object_get(webrtcbin, "latency", &latencyMs, nullptr);
+    QCOMPARE(latencyMs, expectedLatencyMs);
+
+    // gst_element_add_pad emits pad-added and consumes the floating pad, as whepclientsrc's video pad would.
+    QVERIFY(gst_element_add_pad(src.get(), gst_pad_new_from_static_template(&sH264RtpPadTemplate, "video_rtp")));
+    const GStreamer::GstElementPtr parser = GStreamer::adoptElement(gst_bin_get_by_name(GST_BIN(bin.get()), "parser"));
+    QVERIFY(parser);
+    const GStreamer::GstPadPtr parserSink = GStreamer::adoptPad(gst_element_get_static_pad(parser.get(), "sink"));
+    QVERIFY2(parserSink && gst_pad_is_linked(parserSink.get()), "the WHEP video pad must reach the parser");
+    QVERIFY2(!GstTest::findByFactory(bin.get(), "rtpjitterbuffer"),
+             "webrtcbin owns the jitterbuffer; the factory must not add a second one");
+}
+
 void GstSourceFactoryTest::_testSourceFactoryRejectsBadUri()
 {
-    ignoreLogMessage(
-        "Video.GStreamer.GstSourceFactory", QtWarningMsg,
-        QRegularExpression(QStringLiteral("URI is not specified|Unsupported URI scheme|Invalid UDP port")));
+    ignoreLogMessage("Video.GStreamer.GstSourceFactory", QtWarningMsg,
+                     QRegularExpression(QStringLiteral(
+                         "URI is not specified|Unsupported URI scheme|Invalid UDP port|Missing host in WHEP URI")));
 
     GStreamer::SourceFactory::Config config;
     QVERIFY(!GstTest::createSource(QString(), config));
     QVERIFY(!GstTest::createSource(QStringLiteral("ftp://127.0.0.1/x"), config));
     QVERIFY(!GstTest::createSource(QStringLiteral("udp://127.0.0.1"), config));
     QVERIFY(!GstTest::createSource(QStringLiteral("udp://127.0.0.1:99999"), config));
+    QVERIFY(!GstTest::createSource(QStringLiteral("http:///whep"), config));
 }
 
 void GstSourceFactoryTest::_testSourceFactoryTcpMpegTs()
@@ -629,7 +707,8 @@ void GstSourceFactoryTest::_testTransportFor_data()
     QTest::newRow("udp265") << QStringLiteral("udp265://0.0.0.0:5600") << int(Transport::RtpUdpH265);
     QTest::newRow("mpegts") << QStringLiteral("mpegts://0.0.0.0:5600") << int(Transport::MpegTsUdp);
     QTest::newRow("tcp") << QStringLiteral("tcp://192.168.1.2:5000") << int(Transport::MpegTsTcp);
-    QTest::newRow("http") << QStringLiteral("http://10.0.0.1/video") << -1;
+    QTest::newRow("http") << QStringLiteral("http://10.0.0.1/whep") << int(Transport::Whep);
+    QTest::newRow("https") << QStringLiteral("https://10.0.0.1/whep") << int(Transport::Whep);
     QTest::newRow("no scheme") << QStringLiteral("10.0.0.1:5600") << -1;
 }
 
@@ -641,7 +720,8 @@ void GstSourceFactoryTest::_testTransportFor()
     const std::optional<GStreamer::SourceFactory::Transport> actual = GStreamer::SourceFactory::transportFor(QUrl(uri));
     QCOMPARE(actual ? int(*actual) : -1, transport);
     QCOMPARE(GStreamer::SourceFactory::connectGracePeriod(uri) > std::chrono::milliseconds{0},
-             transport == int(GStreamer::SourceFactory::Transport::Rtsp));
+             (transport == int(GStreamer::SourceFactory::Transport::Rtsp)) ||
+                 (transport == int(GStreamer::SourceFactory::Transport::Whep)));
 }
 
 #endif

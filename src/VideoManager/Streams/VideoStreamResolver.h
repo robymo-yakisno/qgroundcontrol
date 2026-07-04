@@ -27,6 +27,7 @@ struct Settings
     QString udpUrl;
     QString tcpUrl;
     QString rtspUrl;
+    QString whepUrl;
     uint32_t rtspTimeoutSec = 8;
     bool lowLatency = false;
     int rtpJitterLatencyMs = 80;

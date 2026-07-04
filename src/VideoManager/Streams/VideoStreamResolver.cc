@@ -37,6 +37,7 @@ QString autoStreamUri(const QGCVideoStreamInfo& streamInfo)
         case VIDEO_STREAM_TYPE_MPEG_TS:
             return listenUriWithScheme(QLatin1StringView("mpegts://"), uri);
         case VIDEO_STREAM_TYPE_RTSP:
+        case VIDEO_STREAM_TYPE_WHEP:
         case VIDEO_STREAM_TYPE_TCP_MPEG:
         default:
             return uri;
@@ -57,6 +58,7 @@ constexpr ManualSource kManualSources[] = {
     {VideoSettings::videoSourceUDPH265, "udp265://", &VideoStreamResolver::Settings::udpUrl},
     {VideoSettings::videoSourceMPEGTS, "mpegts://", &VideoStreamResolver::Settings::udpUrl},
     {VideoSettings::videoSourceRTSP, "", &VideoStreamResolver::Settings::rtspUrl},
+    {VideoSettings::videoSourceWHEP, "", &VideoStreamResolver::Settings::whepUrl},
     {VideoSettings::videoSourceTCP, "tcp://", &VideoStreamResolver::Settings::tcpUrl},
     {VideoSettings::videoSource3DRSolo, "udp://0.0.0.0:5600", nullptr},
     {VideoSettings::videoSourceParrotDiscovery, "udp://0.0.0.0:8888", nullptr},
@@ -74,7 +76,7 @@ struct TransportName
 /// Every URI scheme autoStreamUri() and kManualSources produce.
 constexpr TransportName kTransportNames[] = {
     {"rtsp", "RTSP"},          {"rtsps", "RTSP"},      {"udp", "RTP/UDP (H.264)"}, {"udp265", "RTP/UDP (H.265)"},
-    {"mpegts", "MPEG-TS/UDP"}, {"tcp", "MPEG-TS/TCP"},
+    {"mpegts", "MPEG-TS/UDP"}, {"tcp", "MPEG-TS/TCP"}, {"http", "WHEP"},           {"https", "WHEP"},
 };
 
 const ManualSource* findManualSource(const QString& videoSource)
@@ -106,6 +108,7 @@ VideoStreamResolver::Settings VideoStreamResolver::snapshot(VideoSettings* video
     settings.udpUrl = videoSettings->udpUrl()->rawValue().toString();
     settings.tcpUrl = videoSettings->tcpUrl()->rawValue().toString();
     settings.rtspUrl = videoSettings->rtspUrl()->rawValue().toString();
+    settings.whepUrl = videoSettings->whepUrl()->rawValue().toString();
     settings.rtspTimeoutSec = videoSettings->rtspTimeout()->rawValue().toUInt();
     settings.lowLatency = videoSettings->lowLatencyMode()->rawValue().toBool();
     settings.rtpJitterLatencyMs = static_cast<int>(
