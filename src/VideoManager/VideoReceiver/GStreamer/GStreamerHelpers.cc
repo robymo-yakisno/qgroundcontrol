@@ -179,6 +179,31 @@ VideoDecoderOptions decoderFamilyForFactory(const char* factoryName)
     return entry ? entry->family : ForceVideoDecoderDefault;
 }
 
+bool isValidWhepUri(const gchar* uri_str)
+{
+    if (!uri_str) {
+        return false;
+    }
+
+    if (!gst_uri_is_valid(uri_str)) {
+        return false;
+    }
+
+    if (!gst_uri_has_protocol(uri_str, "http") && !gst_uri_has_protocol(uri_str, "https")) {
+        return false;
+    }
+
+    GstUri* uri = gst_uri_from_string(uri_str);
+    if (!uri) {
+        return false;
+    }
+
+    const gchar* host = gst_uri_get_host(uri);
+    const bool hasHost = (host && host[0] != '\0');
+    gst_uri_unref(uri);
+    return hasHost;
+}
+
 bool isHardwareDecoderFactory(GstElementFactory* factory)
 {
     if (!factory) {

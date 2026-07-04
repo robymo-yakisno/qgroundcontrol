@@ -12,6 +12,7 @@
 
 namespace GStreamer {
 bool isValidRtspUri(const gchar* uri_str);
+bool isValidWhepUri(const gchar* uri_str);
 
 /// Takes @p element out of its parent bin, then sets it to NULL. Removed first, so the bin can't bring it back up and
 /// nothing it posts while stopping reaches the bin's bus. No-op when @p element has no parent. The caller's refs on

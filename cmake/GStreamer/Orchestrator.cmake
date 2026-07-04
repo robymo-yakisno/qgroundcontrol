@@ -224,6 +224,10 @@ else()
     gstreamer_scan_plugin_basenames(_gst_available_plugins "${GSTREAMER_PLUGIN_PATH}")
     set(_gst_plugin_source "${GSTREAMER_PLUGIN_PATH}")
 endif()
+if(NOT GStreamer_USE_STATIC_LIBS AND "rswebrtc" IN_LIST _gst_available_plugins)
+    target_compile_definitions(GStreamer::GStreamer INTERFACE QGC_GST_WHEP)
+endif()
+
 # Every plugin the SDK or system ships, used by this build or not: the plugin archives of static layouts (iOS: the
 # plugins registered from its merged archive), else the plugin files.
 if(GStreamer_USE_STATIC_LIBS)

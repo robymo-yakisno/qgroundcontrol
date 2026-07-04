@@ -37,6 +37,7 @@
       "common": [
         "app",
         "coreelements",
+        "dtls",
         "isomp4",
         "jpeg",
         "jpegformat",
@@ -44,13 +45,16 @@
         "matroska",
         "mpegtsdemux",
         "multifile",
+        "nice",
         "opengl",
         "openh264",
         "playback",
+        "rswebrtc",
         "rtp",
         "rtpmanager",
         "rtsp",
         "sdpelem",
+        "srtp",
         "tcp",
         "typefindfunctions",
         "udp",
@@ -58,7 +62,8 @@
         "vpx",
         "videoconvertscale",
         "videoconvert",
-        "videoscale"
+        "videoscale",
+        "webrtc"
       ],
       "android": [
         "androidmedia",

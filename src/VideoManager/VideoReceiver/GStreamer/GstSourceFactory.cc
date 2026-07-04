@@ -1,9 +1,12 @@
 #include "GstSourceFactory.h"
 
+#include <gst/gstchildproxy.h>
 #include <gst/gst.h>
+#include <gst/gstutils.h>
 #include <gst/rtsp/gstrtsptransport.h>
 #include <utility>
 
+#include <QtCore/QByteArray>
 #include <QtCore/QFile>
 #include <QtCore/QUrl>
 
@@ -492,6 +495,26 @@ GstElementPtr buildRtspSource(const QString& uri, const QUrl& sourceUrl, const C
     return source;
 }
 
+GstElementPtr buildWhepSource(const QString& uri, const QUrl& sourceUrl, const Config& config)
+{
+    const QByteArray whepEndpoint = uri.toUtf8();
+    if (!GStreamer::isValidWhepUri(whepEndpoint.constData())) {
+        qCCritical(GstSourceFactoryLog) << "Invalid WHEP URI:" << sourceUrl.toDisplayString(QUrl::RemoveUserInfo);
+        return nullptr;
+    }
+
+    GstElementPtr source = adoptElement(gst_element_factory_make("whepclientsrc", "source"));
+    if (!source) {
+        qCCritical(GstSourceFactoryLog) << "gst_element_factory_make('whepclientsrc') failed";
+        return nullptr;
+    }
+
+    gst_child_proxy_set(GST_CHILD_PROXY(source.get()), "signaller::whep-endpoint", whepEndpoint.constData(), nullptr);
+    g_object_set(source.get(), "do-retransmission", config.doRetransmission ? TRUE : FALSE, nullptr);
+    gst_util_set_object_arg(G_OBJECT(source.get()), "audio-codecs", "< >");
+    return source;
+}
+
 GstElementPtr buildTcpSource(const QUrl& sourceUrl)
 {
     const int port = sourceUrl.port();
@@ -578,7 +601,7 @@ GstElementPtr buildUdpSource(const QUrl& sourceUrl, bool isUdpH264, bool isUdpH2
 // Wire upstream → (optional rtpjitterbuffer) → binParser, topology chosen by RTP probe (MPEG-TS
 // links via pad-added). Created elements join @p bin; returns false (logged) on failure.
 bool linkSourceToParser(GstElement* bin, GstElement* upstream, GstElement* binParser, const Config& config,
-                        guint latencyMs, bool isMpegTs, bool isRtsp)
+                        guint latencyMs, bool isMpegTs, bool allowDynamicJitterBuffer)
 {
     // MPEG-TS exposes elementary streams via tsdemux dynamic src pads (none at NULL state) and
     // isn't raw RTP, so skip the RTP probe and link via pad-added when the video pad appears.
@@ -608,7 +631,7 @@ bool linkSourceToParser(GstElement* bin, GstElement* upstream, GstElement* binPa
         // linkPad applies the jitter-buffer policy itself when an application/x-rtp pad appears on a
         // non-RTSP source. Context lifetime is tied to binParser (freed on its finalize).
         auto* ctx =
-            new DynamicLinkContext{binParser, latencyMs, !isRtsp && (config.jitterBuffer != JitterBuffer::None)};
+            new DynamicLinkContext{binParser, latencyMs, allowDynamicJitterBuffer && (config.jitterBuffer != JitterBuffer::None)};
         g_object_set_data_full(G_OBJECT(binParser), "qgc-dynamic-link-ctx", ctx,
                                [](gpointer p) { delete static_cast<DynamicLinkContext*>(p); });
         (void) g_signal_connect(upstream, "pad-added", G_CALLBACK(linkPad), ctx);
@@ -659,12 +682,17 @@ GstElement* create(const QString& uri, const Config& config)
     const QString scheme = sourceUrl.scheme().toLower();
 
     const bool isRtsp = scheme.startsWith(QLatin1String("rtsp"));
+#ifdef QGC_GST_WHEP
+    const bool isWhep = scheme.startsWith(QLatin1String("http"));
+#else
+    const bool isWhep = false;
+#endif
     const bool isUdpH264 = (scheme == QLatin1String("udp"));
     const bool isUdpH265 = (scheme == QLatin1String("udp265"));
     const bool isUdpMPEGTS = (scheme == QLatin1String("mpegts"));
     const bool isTcpMPEGTS = (scheme == QLatin1String("tcp"));
 
-    if (!isRtsp && !isUdpH264 && !isUdpH265 && !isUdpMPEGTS && !isTcpMPEGTS) {
+    if (!isRtsp && !isWhep && !isUdpH264 && !isUdpH265 && !isUdpMPEGTS && !isTcpMPEGTS) {
         qCWarning(GstSourceFactoryLog) << "Unsupported URI scheme:" << scheme << "in"
                                       << QGCNetworkHelper::redactedUrlForLogging(sourceUrl);
         return nullptr;
@@ -673,6 +701,10 @@ GstElement* create(const QString& uri, const Config& config)
     GstElementPtr source;
     if (isRtsp) {
         source = buildRtspSource(uri, sourceUrl, config, latencyMs);
+#ifdef QGC_GST_WHEP
+    } else if (isWhep) {
+        source = buildWhepSource(uri, sourceUrl, config);
+#endif
     } else if (isTcpMPEGTS) {
         source = buildTcpSource(sourceUrl);
     } else {  // isUdpH264 || isUdpH265 || isUdpMPEGTS
@@ -770,7 +802,7 @@ GstElement* create(const QString& uri, const Config& config)
         }
     } else {
         if (!linkSourceToParser(bin.get(), upstream, binParser, config, latencyMs, isTcpMPEGTS || isUdpMPEGTS,
-                                isRtsp)) {
+                                !(isRtsp || isWhep))) {
             return nullptr;
         }
     }
