@@ -32,6 +32,7 @@
 #include "SettingsGroup.h"
 #include "UnitsSettings.h"
 #include "VideoSettings.h"
+#include "Video2Settings.h"
 #include "Viewer3DSettings.h"
 
 QGC_LOGGING_CATEGORY(SettingsManagerLog, "Utilities.SettingsManager")
@@ -77,6 +78,7 @@ void SettingsManager::init()
     _gpsCorrectionSettings = new GPSCorrectionSettings(this);
     _ntripSettings = new NTRIPSettings(this);
     _videoSettings = new VideoSettings(this);
+    _video2Settings = new Video2Settings(this);
     _mavlinkSettings = new MavlinkSettings(this);
     _joystickManagerSettings = new JoystickManagerSettings(this);
     _logManagerSettings = new LogManagerSettings(this);
@@ -141,6 +143,7 @@ GPSCorrectionSettings* SettingsManager::gpsCorrectionSettings() const
 }
 
 VideoSettings *SettingsManager::videoSettings() const { return _videoSettings; }
+Video2Settings *SettingsManager::video2Settings() const { return _video2Settings; }
 MavlinkSettings *SettingsManager::mavlinkSettings() const { return _mavlinkSettings; }
 JoystickManagerSettings *SettingsManager::joystickManagerSettings() const { return _joystickManagerSettings; }
 LogManagerSettings *SettingsManager::logManagerSettings() const { return _logManagerSettings; }

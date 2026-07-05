@@ -72,6 +72,7 @@ else()
         RTKCorrectionsSettings.qml
         SettingsPagesModel.qml
         TelemetrySettings.qml
+        Video2Settings.qml
         VideoSettings.qml
         Viewer3DSettings.qml
     )

@@ -25,6 +25,7 @@ class UnitsSettings;
 class NTRIPSettings;
 class GPSCorrectionSettings;
 class VideoSettings;
+class Video2Settings;
 class Viewer3DSettings;
 class MavlinkSettings;
 class FactMetaData;
@@ -60,6 +61,7 @@ class SettingsManager : public QQmlPropertyMap
     Q_MOC_INCLUDE("NTRIPSettings.h")
     Q_MOC_INCLUDE("GPSCorrectionSettings.h")
     Q_MOC_INCLUDE("VideoSettings.h")
+    Q_MOC_INCLUDE("Video2Settings.h")
     Q_MOC_INCLUDE("MavlinkSettings.h")
     Q_MOC_INCLUDE("JoystickManagerSettings.h")
     Q_MOC_INCLUDE("LogManagerSettings.h")
@@ -85,6 +87,7 @@ class SettingsManager : public QQmlPropertyMap
     Q_PROPERTY(QObject *ntripSettings                   READ ntripSettings                  CONSTANT)
     Q_PROPERTY(QObject* gpsCorrectionSettings READ gpsCorrectionSettings CONSTANT)
     Q_PROPERTY(QObject *videoSettings                   READ videoSettings                  CONSTANT)
+    Q_PROPERTY(QObject *video2Settings                  READ video2Settings                 CONSTANT)
     Q_PROPERTY(QObject *mavlinkSettings                 READ mavlinkSettings                CONSTANT)
     Q_PROPERTY(QObject *joystickManagerSettings         READ joystickManagerSettings        CONSTANT)
     Q_PROPERTY(QObject *logManagerSettings              READ logManagerSettings              CONSTANT)
@@ -132,6 +135,7 @@ public:
     NTRIPSettings *ntripSettings() const;
     GPSCorrectionSettings* gpsCorrectionSettings() const;
     VideoSettings *videoSettings() const;
+    Video2Settings *video2Settings() const;
     MavlinkSettings *mavlinkSettings() const;
     JoystickManagerSettings *joystickManagerSettings() const;
     LogManagerSettings *logManagerSettings() const;
@@ -161,6 +165,7 @@ private:
     NTRIPSettings *_ntripSettings = nullptr;
     GPSCorrectionSettings* _gpsCorrectionSettings = nullptr;
     VideoSettings *_videoSettings = nullptr;
+    Video2Settings *_video2Settings = nullptr;
     MavlinkSettings *_mavlinkSettings = nullptr;
     JoystickManagerSettings *_joystickManagerSettings = nullptr;
     LogManagerSettings *_logManagerSettings = nullptr;
