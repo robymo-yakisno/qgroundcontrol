@@ -34,6 +34,7 @@ Item {
     property bool   _mainWindowIsMap:       _mapControl ? _mapControl.pipState.state === _mapControl.pipState.fullState : true
     property bool   _isFullWindowItemDark:  _mainWindowIsMap ? (_mapControl ? _mapControl.isSatelliteMap : true) : true
     property var    _activeVehicle:         QGroundControl.multiVehicleManager.activeVehicle
+    property int    _cameraCount:           _activeVehicle?.cameraManager?.cameras.count ?? 0
     property var    _missionController:     _planController.missionController
     property var    _geoFenceController:    _planController.geoFenceController
     property var    _rallyPointController:  _planController.rallyPointController
@@ -106,9 +107,9 @@ Item {
             }
         }
 
-        FlyViewVideo {
-            id:         videoControl
-            pipView:    _pipView
+        FlyViewVideos {
+            id:      videoControl
+            pipView: _pipView
         }
 
         PipView {
@@ -120,10 +121,22 @@ Item {
             item1IsFullSettingsKey: "MainFlyWindowIsMap"
             item1:                  _mapControl
             item2:                  QGroundControl.videoManager.hasVideo ? videoControl : null
-            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
+            show:                   (QGroundControl.videoManager.hasVideo || _cameraCount > 0) && !QGroundControl.videoManager.fullScreen &&
                                         (videoControl.pipState.state === videoControl.pipState.pipState ||
                                          (_mapControl && _mapControl.pipState.state === _mapControl.pipState.pipState))
             z:                      QGroundControl.zOrderWidgets
+        }
+
+        FlyViewPipCameras {
+            id:              pipCameras
+            anchors.left:    parent.left
+            anchors.bottom:  _pipView.visible ? _pipView.top : parent.bottom
+            anchors.margins: _toolsMargin
+            pipView:         _pipView
+            visible:         _mainWindowIsMap
+                             && (QGroundControl.videoManager.decoding || _cameraCount > 0)
+                             && !QGroundControl.videoManager.fullScreen
+            z:               QGroundControl.zOrderWidgets
         }
 
         FlyViewWidgetLayer {
