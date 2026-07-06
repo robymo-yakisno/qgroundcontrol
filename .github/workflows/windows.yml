@@ -151,6 +151,58 @@ jobs:
             -DQGC_CPACK_GENERATOR=NSIS
             ${{ matrix.variant == 'arm64-cross' && format('-DQT_HOST_PATH={0}', steps.build-setup.outputs.host_qt_root_dir) || '' }}
 
+      - name: Resolve GStreamer root
+        id: gst-root
+        if: matrix.gstreamer
+        shell: bash
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/cmake_helper.py" cache-var \
+            --build-dir "${RUNNER_TEMP}/build" \
+            --name QGC_GST_RESOLVED_ROOT \
+            --required \
+            --output-key gst_root
+
+      - name: Add GStreamer to PATH
+        if: matrix.gstreamer
+        shell: bash
+        run: echo "${STEPS_GST_ROOT_OUTPUTS_GST_ROOT}/bin" >> "$GITHUB_PATH"
+        env:
+          STEPS_GST_ROOT_OUTPUTS_GST_ROOT: ${{ steps.gst-root.outputs.gst_root }}
+
+      - name: Setup Rust toolchain (rswebrtc)
+        if: matrix.gstreamer
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch == 'win64_msvc2022_arm64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}
+
+      - name: Build rswebrtc from source
+        if: matrix.gstreamer
+        shell: bash
+        env:
+          GST_ROOT: ${{ steps.gst-root.outputs.gst_root }}
+          RUST_TARGET: ${{ matrix.arch == 'win64_msvc2022_arm64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}
+        run: |
+          set -euo pipefail
+
+          git_link="/c/Program Files/Git/usr/bin/link.exe"
+          if [ -f "$git_link" ]; then
+            mv "$git_link" "${git_link}.bak"
+          fi
+
+          cargo install --locked cargo-c
+
+          gst_plugins_rs="$RUNNER_TEMP/gst-plugins-rs"
+          git clone --branch feat/webrtc-pcma-pcmu --depth 1 https://gitlab.freedesktop.org/ikalnytskyi/gst-plugins-rs.git "$gst_plugins_rs"
+
+          export PKG_CONFIG="$GST_ROOT/bin/pkg-config.exe"
+          export PKG_CONFIG_PATH=""
+          export PKG_CONFIG_LIBDIR="$GST_ROOT/lib/pkgconfig;$GST_ROOT/lib/gstreamer-1.0/pkgconfig"
+          export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
+          export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
+
+          cd "$gst_plugins_rs/net/webrtc"
+          cargo cinstall --release --target "$RUST_TARGET" --prefix "$GST_ROOT" --library-type cdylib
+
       - name: Build
         id: build
         uses: ./.github/actions/cmake-build
