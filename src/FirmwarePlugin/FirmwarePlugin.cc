@@ -42,6 +42,23 @@ FirmwarePlugin::~FirmwarePlugin()
     qCDebug(FirmwarePluginLog) << this;
 }
 
+void FirmwarePlugin::initializeVehicle(Vehicle* vehicle)
+{
+    if (vehicle->isOfflineEditingVehicle()) {
+        return;
+    }
+
+    QObject::connect(
+        vehicle, &Vehicle::initialConnectComplete, vehicle,
+        [vehicle]() {
+            // Relay status is optional; track the request so its ACK cannot complete another REQUEST_MESSAGE.
+            vehicle->requestMessage([](void*, MAV_RESULT, VehicleTypes::RequestMessageResultHandlerFailureCode_t,
+                                       const mavlink_message_t&) {},
+                                    nullptr, vehicle->defaultComponentId(), MAVLINK_MSG_ID_RELAY_STATUS);
+        },
+        Qt::SingleShotConnection);
+}
+
 AutoPilotPlugin *FirmwarePlugin::autopilotPlugin(Vehicle *vehicle) const
 {
     return new GenericAutoPilotPlugin(vehicle, vehicle);
