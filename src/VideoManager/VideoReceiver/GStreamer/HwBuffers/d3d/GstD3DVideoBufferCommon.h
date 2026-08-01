@@ -69,10 +69,11 @@ struct MapDiagnostics : GstHw::MapDiagnostics
     }
 };
 
-/// Pool key: a staging resource is reusable only for an identical (size, format, plane) layout. width is UINT64 to hold
-/// D3D12_RESOURCE_DESC::Width; D3D11's UINT widens losslessly.
+/// Pool key: a staging resource is reusable only for the same source resource and an identical (size, format, plane)
+/// layout. width is UINT64 to hold D3D12_RESOURCE_DESC::Width; D3D11's UINT widens losslessly.
 struct StagingKey
 {
+    quintptr source = 0;
     quint64 width = 0;
     quint32 height = 0;
     quint32 format = 0;  // DXGI_FORMAT
