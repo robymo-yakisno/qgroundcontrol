@@ -18,7 +18,7 @@ set(QGC_CUSTOM_DIR
 # ============================================================================
 
 set(QGC_APP_NAME
-    "QGroundControl"
+    "RTQGroundControl"
     CACHE STRING "Application name"
 )
 string(TIMESTAMP _copyright_year "%Y")
@@ -31,15 +31,15 @@ set(QGC_APP_DESCRIPTION
     CACHE STRING "Application description"
 )
 set(QGC_ORG_NAME
-    "QGroundControl"
+    "RTQgroundControl"
     CACHE STRING "Organization name"
 )
 set(QGC_ORG_DOMAIN
-    "qgroundcontrol.com"
+    "rtqgroundcontrol.com"
     CACHE STRING "Organization domain"
 )
 set(QGC_PACKAGE_NAME
-    "org.mavlink.qgroundcontrol"
+    "org.mavlink.rtqgroundcontrol"
     CACHE STRING "Package identifier"
 )
 

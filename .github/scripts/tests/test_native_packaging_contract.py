@@ -157,6 +157,8 @@ def test_windows_installer_uses_only_the_cpack_nsis_path() -> None:
     assert "set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)" in nsis
 
     assert "fetch-depth: 0" in workflow
+    assert "package: RTQGroundControl-installer-AMD64-ARM64" in workflow
+    assert "package: RTQGroundControl-installer-AMD64-arm64" not in workflow
     assert "-DQGC_CPACK_GENERATOR=NSIS" in workflow
     assert "target: qgc-package" in workflow
     assert "uses: ./.github/actions/cmake-install" not in workflow
@@ -177,7 +179,7 @@ def test_windows_installer_uses_only_the_cpack_nsis_path() -> None:
     assert "artifact-path: ${{ steps.checksum.outputs.path }}" in upload_action
     assert "InstallLocation mismatch" in installer_test
     assert "Windows Error Reporting registry key not found" in installer_test
-    assert "QGroundControl (GPU Safe Mode).lnk" in installer_test
+    assert "RTQGroundControl (GPU Safe Mode).lnk" in installer_test
     assert "Start Menu directory remains after uninstall" in installer_test
 
 
