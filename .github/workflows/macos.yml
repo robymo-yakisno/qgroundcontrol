@@ -92,7 +92,7 @@ jobs:
           preset: ${{ matrix.build_type == 'Debug' && 'macOS-debug' || 'macOS' }}
           extra-args: >-
             -DQGC_BUILD_PORTABLE_TESTS=${{ matrix.build_type == 'Release' && 'ON' || 'OFF' }}
-            -DQGC_MACOS_SIGN_WITH_IDENTITY=${{ github.event_name != 'pull_request' && matrix.build_type == 'Release' && 'ON' || 'OFF' }}
+            -DQGC_MACOS_SIGN_WITH_IDENTITY=OFF
             -DQGC_MACOS_UNIVERSAL_BUILD=ON
 
       - name: Build
@@ -138,7 +138,7 @@ jobs:
           expect-archs: x86_64h arm64
 
       - name: Import Code Signing Certificate
-        if: github.event_name != 'pull_request' && matrix.build_type == 'Release'
+        if: false
         uses: apple-actions/import-codesign-certs@v7
         with:
           p12-file-base64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
